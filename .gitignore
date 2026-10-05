@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+
+# Personal data, local only
+profile.md
+summer2027.db*
+cv/
+research/
