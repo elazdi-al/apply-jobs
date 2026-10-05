@@ -1,6 +1,6 @@
-// Mirrors the companies and people tables in summer2027.db (tracker.py owns the schema).
+// Mirrors the companies and people tables in tracker.db (tracker.py owns the schema).
 export type Route = "Direct application" | "Referral opportunity";
-export type Internship = "Posting open" | "Recurring program" | "Hires interns ad hoc" | "No sign of internships";
+export type Openings = "Posting open" | "Recurring program" | "Hires ad hoc" | "No sign of openings";
 export type Tier = "A" | "B" | "C";
 export type Relationship = "Existing" | "Warm" | "Cold";
 export type Step = "Email" | "Apply";
@@ -17,7 +17,7 @@ export type Company = {
   stage: string | null;
   what_they_do: string;
   signal: string | null;
-  internship_status: Internship;
+  openings: Openings;
   opportunity: string | null;
   referral_path: string | null;
   outreach_strategy: string;
@@ -57,23 +57,14 @@ export type Person = {
   added: string;
 };
 
-export type Variant = { id: string; built: boolean };
-export type Tracker = { today: string; companies: Company[]; people: Person[]; variants: Variant[] };
+// A CV track from search.json, and whether cv/<id>.pdf exists.
+export type Variant = { id: string; name: string; built: boolean };
+export type Tracker = { title: string; today: string; companies: Company[]; people: Person[]; variants: Variant[] };
 // The fields the page writes back; see FIELDS in server.ts.
 export type Patch = Partial<Pick<Company, "status" | "last_contact" | "notes">>;
 
 export type RouteFilter = "all" | "referral" | "direct";
 export type View = { view: "home" } | { view: "company"; id: string };
-
-export const TRACKS: Record<string, string> = {
-  "offensive-research": "Offensive research",
-  "product-security-eng": "Product security",
-  "crypto-privacy": "Crypto and privacy",
-  "ai-security": "AI security",
-  "research-lab": "Research labs",
-  "security-generalist": "Generalist",
-};
-export const trackName = (id: string) => TRACKS[id] ?? id;
 
 export const companyHref = (c: Company) => `#/c/${c.id}`;
 export function parseRoute(hash: string): View {

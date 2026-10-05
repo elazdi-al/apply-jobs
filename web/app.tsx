@@ -145,7 +145,7 @@ function Summary(props: { data: Tracker | null; failed: boolean; stale: boolean;
     <section className="summary" aria-label="Pipeline">
       <header>
         <a className="label" href="#/">
-          Summer 2027
+          {data?.title ?? "apply-jobs"}
         </a>
         <button type="button" className="theme" aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} onClick={props.onTheme}>
           <span data-on={theme === "light" || undefined}>

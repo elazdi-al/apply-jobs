@@ -1,13 +1,13 @@
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import index from "./index.html";
-import { STATUSES, TRACKS, type Company, type Person, type Tracker } from "./model.ts";
+import { STATUSES, type Company, type Person, type Tracker } from "./model.ts";
 
 const port = Number(process.env.PORT ?? 4100);
 const ROOT = join(import.meta.dir, "..");
 
 // tracker.py creates the file and its schema on the first merge.
-const db = new Database(join(ROOT, "summer2027.db"), { readwrite: true, strict: true });
+const db = new Database(join(ROOT, "tracker.db"), { readwrite: true, strict: true });
 db.run("PRAGMA busy_timeout = 5000");
 
 type Row<T> = Omit<T, "sources"> & { sources: string };
@@ -24,11 +24,21 @@ const forbidden = () => new Response("Forbidden", { status: 403 });
 
 const today = () => new Date().toLocaleDateString("sv-SE");
 
+// Read on every request, so edits to search.json show without a restart.
+type Search = { title: string; tracks: { id: string; name: string }[] };
+
 async function tracker(): Promise<Response> {
+  const search: Search = await Bun.file(join(ROOT, "search.json")).json();
   const variants = await Promise.all(
-    Object.keys(TRACKS).map(async (id) => ({ id, built: await Bun.file(join(ROOT, "cv", `${id}.pdf`)).exists() })),
+    search.tracks.map(async ({ id, name }) => ({ id, name, built: await Bun.file(join(ROOT, "cv", `${id}.pdf`)).exists() })),
   );
-  const body: Tracker = { today: today(), companies: companies.all().map(parse<Company>), people: people.all().map(parse<Person>), variants };
+  const body: Tracker = {
+    title: search.title,
+    today: today(),
+    companies: companies.all().map(parse<Company>),
+    people: people.all().map(parse<Person>),
+    variants,
+  };
   return Response.json(body);
 }
 
@@ -68,4 +78,4 @@ const server = Bun.serve({
   fetch: () => new Response("Not found", { status: 404 }),
 });
 
-console.log(`Summer 2027 on ${server.url}`);
+console.log(`apply-jobs on ${server.url}`);

@@ -1,5 +1,5 @@
 import { Icon } from "./icons.tsx";
-import { dueLabel, followUpOn, fullDate, host, isReferral, path, place, STATUSES, trackName, when, type Company, type Status, type Tracker } from "./model.ts";
+import { dueLabel, followUpOn, fullDate, host, isReferral, path, place, STATUSES, when, type Company, type Status, type Tracker } from "./model.ts";
 import { Meter, Quiet, Section, Sentence, type Save } from "./ui.tsx";
 
 const SCORES = [
@@ -43,7 +43,7 @@ export function CompanyPage({ company, data, failed, save }: { company: Company 
     );
   }
   const c = company;
-  const built = data.variants.find((v) => v.id === c.cv_variant)?.built;
+  const track = data.variants.find((v) => v.id === c.cv_variant);
   // People rows name the companies they reach in free text, so match the step's contact or the name's first word.
   const stem = c.company.split(/[\s(]/)[0]!.toLowerCase();
   const people = data.people.filter((p) => p.name === c.step_who || (stem.length >= 4 && p.connects_to.toLowerCase().includes(stem)));
@@ -51,7 +51,7 @@ export function CompanyPage({ company, data, failed, save }: { company: Company 
     ["Category", c.category],
     ["Location", place(c)],
     ["Size", c.stage],
-    ["Internships", c.internship_status],
+    ["Openings", c.openings],
   ] as const;
 
   const plan = steps(c.outreach_strategy);
@@ -87,8 +87,8 @@ export function CompanyPage({ company, data, failed, save }: { company: Company 
         <p className="ask">{c.step_ask}</p>
         <p className="when">{timing(c, data.today)}</p>
         {c.status === "New" && (
-          <p className="when" data-missing={!built || undefined}>
-            {built ? `Send cv/${c.cv_variant}.pdf` : `${trackName(c.cv_variant)} CV not built yet, tailor it from cv/cv.tex`}
+          <p className="when" data-missing={!track?.built || undefined}>
+            {track?.built ? `Send cv/${c.cv_variant}.pdf` : `${track?.name ?? c.cv_variant} CV missing, add it as cv/${c.cv_variant}.pdf`}
           </p>
         )}
       </section>
