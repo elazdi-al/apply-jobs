@@ -3,11 +3,11 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Summer 2027 internship tracker, stored in summer2027.db (SQLite).
+"""Job search tracker, stored in tracker.db (SQLite). CV tracks come from search.json, which /jobs-setup writes.
 
     uv run tracker.py names              CV tracks, plus companies and people already tracked
     uv run tracker.py check FILE...      validate research JSON files
-    uv run tracker.py merge [FILE...]    merge research JSON into summer2027.db (default: research/inbox/*.json)
+    uv run tracker.py merge [FILE...]    merge research JSON into tracker.db (default: research/inbox/*.json)
     uv run tracker.py selftest
 
 Research JSON: {"companies": [...], "referrals": [...]}, field rules in validate_company / validate_referral.
@@ -24,28 +24,29 @@ import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DB = ROOT / "summer2027.db"
+DB = ROOT / "tracker.db"
+SEARCH = ROOT / "search.json"
 INBOX = ROOT / "research" / "inbox"
 MERGED = ROOT / "research" / "merged"
 
 ROUTES = ("Direct application", "Referral opportunity")
-INTERNSHIP = ("Posting open", "Recurring program", "Hires interns ad hoc", "No sign of internships")
+OPENINGS = ("Posting open", "Recurring program", "Hires ad hoc", "No sign of openings")
 STEPS = ("Email", "Apply")
 STATUSES = ("New", "Emailed", "Applied", "Interviewing", "Offer", "Rejected", "Skipped")
 REF_TYPES = ("Professor", "Researcher", "Alumni", "Lab / center", "Program / event", "Personal")
 RELATIONSHIPS = ("Existing", "Warm", "Cold")
-CV_ANGLES = {
-    "security-generalist": "Early-stage security startups without posted roles, security consultancies",
-    "offensive-research": "Offensive security, vulnerability research, pentest / red team, fuzzing and reverse-engineering tooling",
-    "product-security-eng": "Security product companies hiring software engineers (AppSec, cloud security, detection platforms)",
-    "ai-security": "AI / LLM security, AI red teaming, guardrails, agent security",
-    "crypto-privacy": "Applied cryptography, privacy tech, confidential computing, blockchain security",
-    "research-lab": "Industrial research labs, big-tech intern programs, public research institutions",
-}
 STEP_WHO_MAX, STEP_ASK_MAX = 40, 80
 # Priority = weighted mean of the 1-5 scores, computed by SQLite so every reader gets the same number.
 WEIGHTS = {"fit": 2, "access": 2, "momentum": 1}
 TIERS = {"A": 4, "B": 3}
+
+
+def tracks():
+    """CV track id -> the companies it suits, from search.json."""
+    try:
+        return {t["id"]: t["targets"] for t in json.loads(SEARCH.read_text())["tracks"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        sys.exit("search.json is missing or has no tracks. Run /jobs-setup first.")
 
 
 def one_of(column, options):
@@ -66,7 +67,7 @@ CREATE TABLE IF NOT EXISTS companies (
   stage TEXT,
   what_they_do TEXT NOT NULL,
   signal TEXT,
-  {one_of("internship_status", INTERNSHIP)},
+  {one_of("openings", OPENINGS)},
   opportunity TEXT,
   referral_path TEXT,
   outreach_strategy TEXT NOT NULL,
@@ -74,7 +75,7 @@ CREATE TABLE IF NOT EXISTS companies (
   {one_of("step", STEPS)},
   step_who TEXT NOT NULL,
   step_ask TEXT NOT NULL,
-  {one_of("cv_variant", CV_ANGLES)},
+  cv_variant TEXT NOT NULL,
   deadline TEXT,
   act_by TEXT,
   fit INTEGER NOT NULL CHECK (fit BETWEEN 1 AND 5),
@@ -109,7 +110,7 @@ CREATE TABLE IF NOT EXISTS people (
 # union: merge URL lists | upgrade: Direct application -> Referral opportunity only
 COMPANY_RULES = {
     "company": "fill", "route": "upgrade", "country": "fill", "city": "fill", "category": "fill", "stage": "fill",
-    "what_they_do": "fill", "signal": "refresh", "internship_status": "refresh", "opportunity": "fill",
+    "what_they_do": "fill", "signal": "refresh", "openings": "refresh", "opportunity": "fill",
     "referral_path": "fill", "outreach_strategy": "fill", "contact_target": "fill",
     "step": "refresh", "step_who": "refresh", "step_ask": "refresh", "cv_variant": "fill", "deadline": "refresh",
     "fit": "fill", "access": "fill", "momentum": "fill", "website": "fill", "sources": "union", "found_via": "fill",
@@ -157,15 +158,15 @@ def _sources(rec, errors, where):
         errors.append(f"{where}: 'sources' must be a non-empty list of http(s) URLs")
 
 
-def validate_company(rec, where):
+def validate_company(rec, where, cv_tracks):
     errors = []
     for key in ("company", "country", "category", "what_they_do", "outreach_strategy"):
         _text(rec, key, errors, where)
     for key in ("city", "website", "stage", "signal", "opportunity", "referral_path", "contact_target", "deadline", "found_via"):
         _text(rec, key, errors, where, required=False)
     _choice(rec, "route", ROUTES, errors, where)
-    _choice(rec, "internship_status", INTERNSHIP, errors, where)
-    _choice(rec, "cv_variant", CV_ANGLES, errors, where)
+    _choice(rec, "openings", OPENINGS, errors, where)
+    _choice(rec, "cv_variant", cv_tracks, errors, where)
     _choice(rec, "step", STEPS, errors, where)
     _text(rec, "step_who", errors, where, limit=STEP_WHO_MAX)
     _text(rec, "step_ask", errors, where, limit=STEP_ASK_MAX)
@@ -191,23 +192,23 @@ def validate_referral(rec, where):
     return errors
 
 
-def validate(doc, where):
+def validate(doc, where, cv_tracks):
     if not isinstance(doc, dict) or not set(doc) <= {"companies", "referrals"}:
         return [f"{where}: top level must be an object with only 'companies' and 'referrals' arrays"]
     errors = []
     for i, rec in enumerate(doc.get("companies", [])):
-        errors += validate_company(rec, f"{where} companies[{i}] {rec.get('company', '?')}")
+        errors += validate_company(rec, f"{where} companies[{i}] {rec.get('company', '?')}", cv_tracks)
     for i, rec in enumerate(doc.get("referrals", [])):
         errors += validate_referral(rec, f"{where} referrals[{i}] {rec.get('name', '?')}")
     return errors
 
 
-def read_doc(path):
+def read_doc(path, cv_tracks):
     try:
         doc = json.loads(Path(path).read_text())
     except (OSError, json.JSONDecodeError) as e:
         return None, [f"{path}: {e}"]
-    return doc, validate(doc, str(path))
+    return doc, validate(doc, str(path), cv_tracks)
 
 
 MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
@@ -269,11 +270,12 @@ def upsert(db, table, rules, key_field, records, today):
     return added, updated
 
 
-def merge(paths, db_path=DB, merged_dir=MERGED, today=None):
+def merge(paths, db_path=DB, merged_dir=MERGED, today=None, cv_tracks=None):
     today = today or datetime.date.today()
+    cv_tracks = cv_tracks or tracks()
     companies, referrals, good, failed = [], [], [], []
     for path in paths:
-        doc, errors = read_doc(path)
+        doc, errors = read_doc(path, cv_tracks)
         if errors or doc is None:
             failed += errors
             continue
@@ -296,7 +298,7 @@ def merge(paths, db_path=DB, merged_dir=MERGED, today=None):
 
 def names(db_path=DB):
     print("CV TRACKS (cv_variant values):")
-    for variant, targets in CV_ANGLES.items():
+    for variant, targets in tracks().items():
         print(f"  {variant}: {targets}")
     if not db_path.exists():
         return
@@ -315,7 +317,7 @@ def selftest():
         inbox.mkdir(parents=True)
         base = {
             "company": "Foo Security AG", "country": "Switzerland", "category": "AppSec", "what_they_do": "w",
-            "outreach_strategy": "o", "route": "Direct application", "internship_status": "Posting open",
+            "outreach_strategy": "o", "route": "Direct application", "openings": "Posting open",
             "cv_variant": "ai-security", "fit": 5, "access": 3, "momentum": 4, "signal": "seed", "sources": ["https://a"],
             "step": "Apply", "step_who": "jobs@foo.ch", "step_ask": "Send the CV", "deadline": "Apply by 23 October 2026",
         }
@@ -323,7 +325,7 @@ def selftest():
                "connects_to": "Foo", "how_to_ask": "email"}
         (inbox / "a.json").write_text(json.dumps({"companies": [base], "referrals": [ref]}))
         db_path = tmp / "t.db"
-        run = lambda: merge(sorted(inbox.glob("*.json")), db_path, tmp / "research" / "merged", datetime.date(2026, 10, 5))
+        run = lambda: merge(sorted(inbox.glob("*.json")), db_path, tmp / "research" / "merged", datetime.date(2026, 10, 5), {"ai-security": "AI"})
         assert run()
         assert not list(inbox.glob("*.json")), "inbox archived"
 
@@ -385,7 +387,8 @@ def main(argv):
     if cmd == "names":
         names()
     elif cmd == "check":
-        errors = [e for path in args for e in read_doc(path)[1]]
+        cv_tracks = tracks()
+        errors = [e for path in args for e in read_doc(path, cv_tracks)[1]]
         print("\n".join(errors) if errors else f"OK ({len(args)} file(s))")
         return 1 if errors or not args else 0
     elif cmd == "merge":
