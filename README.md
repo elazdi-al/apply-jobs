@@ -1,11 +1,7 @@
 # apply-jobs
 
-Finds internship targets, tracks them in SQLite, and lists the next emails and applications on a local page.
+Research companies to apply to, track them in SQLite, and work through the next emails and applications on a local page.
 
-```sh
-bun install
-uv run tracker.py merge   # creates summer2027.db
-bun run web               # http://127.0.0.1:4100
-```
+Clone it, open Claude Code in the folder, and run `/jobs-setup`. It installs what is missing, asks what you are looking for, and runs the first research. Run `/jobs-research` for more.
 
-Research runs through `.claude/workflows/internship-research.js` and reads your `profile.md`. Personal files (`profile.md`, `summer2027.db`, `cv/`, `research/`) stay out of git.
+Your files (`profile.md`, `search.json`, `tracker.db`, `cv/`, `research/`) stay local and out of git.
