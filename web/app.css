@@ -126,9 +126,6 @@ a {
   flex: none;
   vertical-align: -0.125em;
 }
-.icon > :first-child {
-  fill: var(--tint, currentColor);
-}
 
 /* Stage and kind colors, set once and read by every chip, slice, and dot below. */
 [data-stage="email"],
@@ -161,9 +158,6 @@ a {
 
 .muted {
   color: var(--muted);
-}
-.faint {
-  color: var(--faint);
 }
 .r {
   text-align: right;
